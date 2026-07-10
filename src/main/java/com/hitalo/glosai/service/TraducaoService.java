@@ -1,5 +1,8 @@
 package com.hitalo.glosai.service;
 
+import com.hitalo.glosai.dto.GroqApiCallRequest;
+import com.hitalo.glosai.dto.GroqApiCallRequest.Message;
+import com.hitalo.glosai.dto.GroqApiCallResponse;
 import com.hitalo.glosai.exception.ForaDeEscopoException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,7 +13,6 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.List;
-import java.util.Map;
 
 @Service
 public class TraducaoService {
@@ -36,23 +38,23 @@ public class TraducaoService {
     }
 
     public String traduzir(String texto) {
-        Map<String, Object> requestBody = Map.of(
-                "model", model,
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt()),
-                        Map.of("role", "user", "content", texto)
+        var requestBody = new GroqApiCallRequest(
+                model,
+                List.of(
+                        new Message("system", systemPrompt()),
+                        new Message("user", texto)
                 ),
-                "temperature", temperature,
-                "max_tokens", maxTokens
+                temperature,
+                maxTokens
         );
 
         try {
-            Map<String, Object> response = restClient.post()
+            GroqApiCallResponse response = restClient.post()
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + apiKey)
                     .body(requestBody)
                     .retrieve()
-                    .body(Map.class);
+                    .body(GroqApiCallResponse.class);
 
             String glosa = extrairResposta(response);
             log.info("Tradução realizada com sucesso.");
@@ -69,23 +71,17 @@ public class TraducaoService {
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private String extrairResposta(Map<String, Object> response) {
-        if (response == null || !response.containsKey("choices")) {
-            throw new RuntimeException("Resposta inválida do serviço de tradução.");
+    private String extrairResposta(GroqApiCallResponse response) {
+        if (response == null || response.choices() == null || response.choices().isEmpty()) {
+            throw new RuntimeException("Resposta inválida ou vazia do serviço de tradução.");
         }
 
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-        if (choices == null || choices.isEmpty()) {
-            throw new RuntimeException("Resposta vazia do serviço de tradução.");
-        }
-
-        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-        if (message == null || message.get("content") == null) {
+        String content = response.choices().getFirst().message().content();
+        if (content == null) {
             throw new RuntimeException("Resposta incompleta do serviço de tradução.");
         }
 
-        return message.get("content").toString().trim();
+        return content.trim();
     }
 
     private String systemPrompt() {
