@@ -1,0 +1,117 @@
+package com.hitalo.glosai.service;
+
+import com.hitalo.glosai.exception.ForaDeEscopoException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class TraducaoService {
+
+    private static final Logger log = LoggerFactory.getLogger(TraducaoService.class);
+
+    private final RestClient restClient;
+    private final String apiKey;
+    private final String model;
+    private final double temperature;
+    private final int maxTokens;
+
+    public TraducaoService(RestClient restClient,
+                           @Value("${groq.api.key}") String apiKey,
+                           @Value("${groq.api.model}") String model,
+                           @Value("${groq.api.temperature}") double temperature,
+                           @Value("${groq.api.max-tokens}") int maxTokens) {
+        this.restClient = restClient;
+        this.apiKey = apiKey;
+        this.model = model;
+        this.temperature = temperature;
+        this.maxTokens = maxTokens;
+    }
+
+    public String traduzir(String texto) {
+        Map<String, Object> requestBody = Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt()),
+                        Map.of("role", "user", "content", texto)
+                ),
+                "temperature", temperature,
+                "max_tokens", maxTokens
+        );
+
+        try {
+            Map<String, Object> response = restClient.post()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .body(requestBody)
+                    .retrieve()
+                    .body(Map.class);
+
+            String glosa = extrairResposta(response);
+            log.info("Tradução realizada com sucesso.");
+
+            if ("ERRO_ESCOPO".equals(glosa)) {
+                throw new ForaDeEscopoException();
+            }
+
+            return glosa;
+
+        } catch (RestClientException ex) {
+            log.error("Falha na chamada à Groq API: {}", ex.getMessage(), ex);
+            throw new RuntimeException("Falha na comunicação com o serviço de tradução.", ex);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extrairResposta(Map<String, Object> response) {
+        if (response == null || !response.containsKey("choices")) {
+            throw new RuntimeException("Resposta inválida do serviço de tradução.");
+        }
+
+        List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+        if (choices == null || choices.isEmpty()) {
+            throw new RuntimeException("Resposta vazia do serviço de tradução.");
+        }
+
+        Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+        if (message == null || message.get("content") == null) {
+            throw new RuntimeException("Resposta incompleta do serviço de tradução.");
+        }
+
+        return message.get("content").toString().trim();
+    }
+
+    private String systemPrompt() {
+        return """
+                Você é um tradutor de português para GLOSA (representação textual da Língua Brasileira de Sinais).
+
+                Regras obrigatórias:
+                - Marcadores de tempo/lugar sempre no início.
+                - Sem artigos (o, a, um, uma).
+                - Sem preposições (em, para, de, por, com).
+                - Sem conjugações verbais (infinitivo ou forma neutra).
+                - Negação depois do verbo.
+                - Perguntas: partícula interrogativa geralmente no final (POR QUE, QUANDO, ONDE).
+                - Tudo em CAIXA ALTA.
+                - Retornar APENAS a glosa, sem explicações.
+                - Se o texto de entrada fugir do escopo, não for uma frase em português traduzível, for vazio de sentido, contiver apenas símbolos/código, ou qualquer conteúdo que não seja uma frase legítima para tradução, retorne exatamente a palavra ERRO_ESCOPO.
+
+                Exemplos:
+                PT: "Eu vou precisar ir ao banco amanhã de manhã para resolver um problema no meu cartão"
+                GLOSA: AMANHÃ MANHÃ BANCO EU IR CARTÃO PROBLEMA RESOLVER
+
+                PT: "Você pode me ajudar a encontrar a farmácia mais próxima?"
+                GLOSA: FARMÁCIA PERTO AJUDAR VOCÊ PODER EU ENCONTRAR
+
+                PT: "Minha filha não quer comer legumes no jantar"
+                GLOSA: JANTAR LEGUME FILHA MINHA COMER QUERER NÃO
+                """;
+    }
+}
