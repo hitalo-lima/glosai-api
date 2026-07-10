@@ -7,12 +7,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
-import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,7 +31,7 @@ public class TraducaoController {
     @Operation(
             summary = "Traduzir texto em português para GLOSA",
             description = "Recebe uma frase em português e retorna a representação em GLOSA (Libras textual).",
-            requestBody = @RequestBody(
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     required = true,
                     content = @Content(
                             mediaType = "application/json",
@@ -50,7 +50,7 @@ public class TraducaoController {
                     @ApiResponse(responseCode = "500", description = "Erro interno na chamada à Groq API")
             }
     )
-    public ResponseEntity<TraducaoResponse> traduzir(@Valid @org.springframework.web.bind.annotation.RequestBody TraducaoRequest request) {
+    public ResponseEntity<TraducaoResponse> traduzir(@Valid @RequestBody TraducaoRequest request) {
         String glosa = traducaoService.traduzir(request.texto());
         return ResponseEntity.ok(new TraducaoResponse(glosa));
     }
