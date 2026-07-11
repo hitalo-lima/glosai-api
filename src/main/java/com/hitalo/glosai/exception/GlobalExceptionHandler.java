@@ -50,6 +50,14 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(Instant.now(), 422, ex.getMessage()));
     }
 
+    @ExceptionHandler(RespostaTruncadaException.class)
+    public ResponseEntity<ErrorResponse> handleRespostaTruncada(RespostaTruncadaException ex) {
+        log.warn("Resposta truncada: {}", ex.getMessage());
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse(Instant.now(), 400, ex.getMessage()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
         log.error("Erro interno: {}", ex.getMessage(), ex);
