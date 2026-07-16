@@ -9,6 +9,7 @@ import com.hitalo.glosai.exception.RespostaTruncadaException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -39,7 +40,9 @@ public class TraducaoService {
         this.maxTokens = maxTokens;
     }
 
+    @Cacheable(value = "traducoes", key = "T(com.hitalo.glosai.util.TextoNormalizador).normalizar(#texto)")
     public String traduzir(String texto) {
+        log.info("Cache miss - chamando Groq API para: {}", texto);
         GroqApiCallRequest requestBody = new GroqApiCallRequest(
                 model,
                 List.of(
@@ -59,7 +62,7 @@ public class TraducaoService {
                     .body(GroqApiCallResponse.class);
 
             String glosa = extrairResposta(response);
-            log.info("Tradução realizada com sucesso: {}", glosa);
+            log.info("Traducao realizada com sucesso: {}", glosa);
 
             if ("ERRO_ESCOPO".equals(glosa)) {
                 throw new ForaDeEscopoException();
@@ -68,7 +71,7 @@ public class TraducaoService {
             return glosa;
 
         } catch (RestClientException ex) {
-            log.error("Falha na chamada à Groq API: {}", ex.getMessage(), ex);
+            log.error("Falha na chamada a Groq API: {}", ex.getMessage(), ex);
             throw new RuntimeException("Falha na comunicação com o serviço de tradução.", ex);
         }
     }
