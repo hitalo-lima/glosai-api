@@ -43,8 +43,8 @@ public class TraducaoService {
         GroqApiCallRequest requestBody = new GroqApiCallRequest(
                 model,
                 List.of(
-                        new Message("system", systemPrompt()),
-                        new Message("user", texto)
+                    Message.system(systemPrompt()),
+                    Message.user(texto)
                 ),
                 temperature,
                 maxTokens
