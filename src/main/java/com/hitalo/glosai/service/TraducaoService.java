@@ -33,12 +33,12 @@ public class TraducaoService {
     private final int maxTokens;
 
     public TraducaoService(RestClient restClient,
-                           LogTranslationService logTranslationService,
-                           CacheManager cacheManager,
-                           @Value("${groq.api.key}") String apiKey,
-                           @Value("${groq.api.model}") String model,
-                           @Value("${groq.api.temperature}") double temperature,
-                           @Value("${groq.api.max-tokens}") int maxTokens) {
+            LogTranslationService logTranslationService,
+            CacheManager cacheManager,
+            @Value("${groq.api.key}") String apiKey,
+            @Value("${groq.api.model}") String model,
+            @Value("${groq.api.temperature}") double temperature,
+            @Value("${groq.api.max-tokens}") int maxTokens) {
         this.restClient = restClient;
         this.logTranslationService = logTranslationService;
         this.cache = cacheManager.getCache("traducoes");
@@ -89,12 +89,10 @@ public class TraducaoService {
         GroqApiCallRequest requestBody = new GroqApiCallRequest(
                 model,
                 List.of(
-                    Message.system(systemPrompt()),
-                    Message.user(texto)
-                ),
+                        Message.system(systemPrompt()),
+                        Message.user(texto)),
                 temperature,
-                maxTokens
-        );
+                maxTokens);
 
         try {
             GroqApiCallResponse response = restClient.post()
@@ -118,7 +116,8 @@ public class TraducaoService {
         }
 
         if ("length".equals(response.choices().getFirst().finishReason())) {
-            throw new RespostaTruncadaException("A resposta do serviço de tradução foi cortada devido ao limite de tokens.");
+            throw new RespostaTruncadaException(
+                    "A resposta do serviço de tradução foi cortada devido ao limite de tokens.");
         }
 
         String content = response.choices().getFirst().message().content();
@@ -137,30 +136,74 @@ public class TraducaoService {
 
     private String systemPrompt() {
         return """
-                Você é um tradutor de português para GLOSA (representação textual da Língua Brasileira de Sinais).
+                Você traduz português para GLOSA (notação textual da Língua Brasileira de Sinais).
 
-                Regras obrigatórias:
-                - Marcadores de tempo/lugar sempre no início.
-                - Sem artigos (o, a, um, uma).
-                - Sem preposições (em, para, de, por, com).
-                - Sem conjugações verbais (infinitivo ou forma neutra).
-                - Negação depois do verbo.
-                - Perguntas: partícula interrogativa geralmente no final (POR QUE, QUANDO, ONDE).
-                - Tudo em CAIXA ALTA.
-                - Retornar APENAS a glosa, sem explicações.
-                - Se o texto de entrada fugir do escopo, não for uma frase em português, for vazio de sentido, contiver apenas símbolos/código, ou qualquer conteúdo que não seja uma frase legítima para tradução, retorne exatamente a palavra ERRO_ESCOPO.
+                REGRA MAIS IMPORTANTE - FIDELIDADE:
+                Use APENAS palavras e ideias que estão explicitamente no texto original.
+                NUNCA adicione palavra, pronome, tempo ou partícula interrogativa que não
+                esteja no texto. Se não sabe o que fazer com um trecho, mantenha o mais
+                próximo possível do original em vez de inventar.
 
-                Exemplos de casos corretos:
-                PT: "Eu vou precisar ir ao banco amanhã de manhã para resolver um problema no meu cartão"
-                GLOSA: AMANHÃ MANHÃ BANCO EU IR CARTÃO PROBLEMA RESOLVER
+                PRONOMES: mantenha EU, VOCÊ, ELE, ELA, MEU, DELA, NOSSO exatamente como
+                estão no original. Nunca troque um pelo outro.
+
+                ORDEM E ESTRUTURA:
+                - Marcador de tempo/lugar no início (AMANHÃ, HOJE, ONTEM, AQUI).
+                - Sem artigos (o, a, um, uma) e sem preposições (em, para, de, por, com).
+                - Verbos no infinitivo ou forma neutra, sem conjugação.
+                - Negação (NÃO) sempre IMEDIATAMENTE APÓS o verbo, nunca antes.
+                - Quando a frase tiver dois verbos em sequência (ex: "pode ajudar a encontrar",
+                "quero aprender a nadar"), preserve AMBOS os verbos na glosa - nunca descarte
+                um deles.
+
+                PERGUNTAS: escolha a partícula certa, nunca use POR QUE como padrão genérico.
+                - Lugar → ONDE | Tempo → QUANDO | Quantidade/preço → QUANTO
+                - Pessoa → QUEM | Motivo → POR QUE
+                - Se a pergunta é do tipo sim/não (sem palavra interrogativa no original,
+                ex: "Tudo certo?"), NÃO invente uma partícula - apenas reordene o conteúdo
+                - Se a frase for uma pergunta, adicione a partícula "(PERGUNTA)" no final da glosa.
+      
+                FORMATO: tudo em CAIXA ALTA. Retorne APENAS a glosa, sem explicações.
+
+                ERRO_ESCOPO: use somente se o texto for símbolos/código, sem sentido algum,
+                ou em outro idioma. Expressões coloquiais e informais em português (gírias,
+                frases do dia a dia) são válidas e DEVEM ser traduzidas normalmente, nunca
+                rejeitadas.
+
+                EXEMPLOS CORRETOS:
+
+                PT: "Oi, tudo bem?"
+                GLOSA: OI VOCÊ TUDO BEM (PERGUNTA)
+
+                PT: "Eu não gosto de café"
+                GLOSA: CAFÉ EU GOSTAR NÃO
+
+                PT: "Onde você mora?"
+                GLOSA: VOCÊ MORAR ONDE (PERGUNTA)
 
                 PT: "Você pode me ajudar a encontrar a farmácia mais próxima?"
-                GLOSA: FARMÁCIA PERTO AJUDAR VOCÊ PODER EU ENCONTRAR
+                GLOSA: FARMÁCIA PERTO VOCÊ AJUDAR PODER EU ENCONTRAR (PERGUNTA)
+
+                PT: "Quando é a reunião?"
+                GLOSA: REUNIÃO QUANDO (PERGUNTA)
+
+                PT: "Quanto custa isso?"
+                GLOSA: ISSO CUSTAR QUANTO (PERGUNTA)
+
+                PT: "Vou dar uma escapada rapidinho"
+                GLOSA: RAPIDINHO EU ESCAPAR
+
+                PT: "Meu carro quebrou ontem"
+                GLOSA: ONTEM CARRO MEU QUEBRAR
+
+                PT: "Isso não tem nada a ver"
+                GLOSA: ISSO NADA VER NÃO
 
                 PT: "Minha filha não quer comer legumes no jantar"
                 GLOSA: JANTAR LEGUME FILHA MINHA COMER QUERER NÃO
 
-                Exemplo de casos incorretos:
+                EXEMPLOS DE ERRO_ESCOPO (rejeitar):
+
                 PT: "123 @ _ asdaskflgjf"
                 GLOSA: ERRO_ESCOPO
 

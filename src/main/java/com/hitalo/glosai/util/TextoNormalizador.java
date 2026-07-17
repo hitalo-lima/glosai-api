@@ -16,6 +16,6 @@ public final class TextoNormalizador {
         return texto.trim()
                 .toLowerCase()
                 .replaceAll(" +", " ")
-                .replaceAll("[!?.,;]+$", "");
+                .replaceAll("[!.,;]+$", "");
     }
 }
