@@ -5,11 +5,13 @@ import com.hitalo.glosai.dto.GroqApiCallRequest.Message;
 import com.hitalo.glosai.dto.GroqApiCallResponse;
 import com.hitalo.glosai.exception.ForaDeEscopoException;
 import com.hitalo.glosai.exception.RespostaTruncadaException;
+import com.hitalo.glosai.util.TextoNormalizador;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -23,26 +25,67 @@ public class TraducaoService {
     private static final Logger log = LoggerFactory.getLogger(TraducaoService.class);
 
     private final RestClient restClient;
+    private final LogTranslationService logTranslationService;
+    private final Cache cache;
     private final String apiKey;
     private final String model;
     private final double temperature;
     private final int maxTokens;
 
     public TraducaoService(RestClient restClient,
+                           LogTranslationService logTranslationService,
+                           CacheManager cacheManager,
                            @Value("${groq.api.key}") String apiKey,
                            @Value("${groq.api.model}") String model,
                            @Value("${groq.api.temperature}") double temperature,
                            @Value("${groq.api.max-tokens}") int maxTokens) {
         this.restClient = restClient;
+        this.logTranslationService = logTranslationService;
+        this.cache = cacheManager.getCache("traducoes");
         this.apiKey = apiKey;
         this.model = model;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
     }
 
-    @Cacheable(value = "traducoes", key = "T(com.hitalo.glosai.util.TextoNormalizador).normalizar(#texto)")
     public String traduzir(String texto) {
-        log.info("Cache miss - chamando Groq API para: {}", texto);
+        String chave = TextoNormalizador.normalizar(texto);
+
+        try {
+            if (cache != null) {
+                String cached = cache.get(chave, String.class);
+                if (cached != null) {
+                    log.info("Cache HIT para: {}", texto);
+                    logTranslationService.salvarLog(texto, cached, true, true);
+                    return cached;
+                }
+            }
+
+            log.info("Cache miss - chamando Groq API para: {}", texto);
+            String glosa = chamarGroq(texto);
+            log.info("Traducao realizada com sucesso: {}", glosa);
+
+            if ("ERRO_ESCOPO".equals(glosa)) {
+                logTranslationService.salvarLog(texto, null, false, false);
+                throw new ForaDeEscopoException();
+            }
+
+            if (cache != null) {
+                cache.put(chave, glosa);
+            }
+
+            logTranslationService.salvarLog(texto, glosa, true, false);
+            return glosa;
+
+        } catch (ForaDeEscopoException e) {
+            throw e;
+        } catch (Exception e) {
+            logTranslationService.salvarLog(texto, null, false, false);
+            throw e;
+        }
+    }
+
+    private String chamarGroq(String texto) {
         GroqApiCallRequest requestBody = new GroqApiCallRequest(
                 model,
                 List.of(
@@ -61,14 +104,7 @@ public class TraducaoService {
                     .retrieve()
                     .body(GroqApiCallResponse.class);
 
-            String glosa = extrairResposta(response);
-            log.info("Traducao realizada com sucesso: {}", glosa);
-
-            if ("ERRO_ESCOPO".equals(glosa)) {
-                throw new ForaDeEscopoException();
-            }
-
-            return glosa;
+            return extrairResposta(response);
 
         } catch (RestClientException ex) {
             log.error("Falha na chamada a Groq API: {}", ex.getMessage(), ex);
