@@ -31,6 +31,8 @@ public class LogTranslation {
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
 
+    protected LogTranslation() {}
+
     public LogTranslation(String input, String output, Boolean success, Boolean isCached) {
         this.input = input;
         this.output = output;
